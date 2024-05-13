@@ -1,5 +1,5 @@
 import {parser as parserImported} from "../dist/index.js"
-import {stringifyTree} from "./nix-format.js"
+import {stringifyTree} from "./format-tree.js"
 import {readFileSync} from "node:fs"
 
 const argv = process.argv.slice(1);
@@ -22,9 +22,9 @@ const { text } = (() => {
   }
   const name = argv[0].split('/').pop();
   console.error(`usage:`);
-  console.error(`node ${name} -e "__add 1 1"`);
-  console.error(`node ${name} -f path/to/input.nix`);
-  console.error(`echo "__add 1 1" | node ${name}`);
+  console.error(`node ${name} -e "1 + 2 * 3"`);
+  console.error(`node ${name} -f path/to/input.txt`);
+  console.error(`echo "1 + 2 * 3" | node ${name}`);
   process.exit(1);
 })();
 
