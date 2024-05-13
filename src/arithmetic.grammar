@@ -1,241 +1,33 @@
-// Nix grammar for lezer-parser. MIT License (c) 2022 Milan Hauth
+// simple arithmetic grammar
+// addition, subtraction, multiplication, division
+// no parens, no comments, no variables
 
 @top Expr { expr? }
 
 expr
-  { Lambda { Identifier ':' expr }
-  | Lambda { '{' ~markCurlyOpen formals '}' ':' expr }
-  | Lambda { '{' ~markCurlyOpen formals '}' '@' Identifier ':' expr }
-  | Lambda { Identifier '@' '{' ~markCurlyOpen formals '}' ':' expr }
-  | Assert { _ASSERT expr ';' expr }
-  | With { _WITH expr ';' expr }
-  | Let { _LET bindings _IN expr } // syntax sugar: let a=1; in a -> (rec {a=1;}).a
-  | LetOld { _LET '{' bindings '}' } // old let: let { x = 1; body = x; }
-  | expr_if
-  }
-
-
-
-expr_if
-  { If { _IF expr _THEN expr _ELSE expr }
-  | expr_op
-  }
-
-expr_op
-  { Not      {                        '!' expr_op !prec_not }
-  | Neg      {                        '-' expr_op !prec_neg }
-  | Eq       { expr_op !prec_equal   '==' expr_op }
-  | NEq      { expr_op !prec_equal   '!=' expr_op }
-  | LT       { expr_op !prec_compare '<'  expr_op }
-  | LE       { expr_op !prec_compare '<=' expr_op }
-  | GT       { expr_op !prec_compare '>'  expr_op }
-  | GE       { expr_op !prec_compare '>=' expr_op }
-  | And      { expr_op !prec_and     '&&' expr_op }
-  | Or       { expr_op !prec_or      '||' expr_op }
-  | Imply    { expr_op !prec_impl    '->' expr_op }
-  | Update   { expr_op !prec_update  '//' expr_op }
-  | HasAttr  { expr_op !prec_hasAttr  '?' attrpath }
-  | Add      { expr_op !prec_plus     '+' expr_op } // concat strings, Add
-  | Sub      { expr_op !prec_callSub  '-' expr_op }
-  | Mul      { expr_op !prec_mul_div  '*' expr_op }
-  | Div      { expr_op !prec_mul_div  '/' expr_op }
-  | Concat   { expr_op !prec_concat  '++' expr_op } // concat lists
-
-  // TODO where should we handle paths? parse or eval?
-  // copy of Path from expr_simple, to parse "1/2" as Path not Call(Int,Path)
-  // note: no need for !prec_path
-  | expr_path
-
-  | expr_app
-  }
-
-expr_app
-  { Call { expr_app !prec_apply expr_select }
-  | expr_select
-  }
-
-expr_select
-  { Select { expr_simple !prec_select '.' attrpath }
-  | SelectOr { expr_simple !prec_select '.' attrpath _OR_KW expr_select }
+  { Neg      {                     '-' expr !prec_neg }
+  | Add      { expr !prec_plus     '+' expr }
+  | Sub      { expr !prec_callSub  '-' expr }
+  | Mul      { expr !prec_mul_div  '*' expr }
+  | Div      { expr !prec_mul_div  '/' expr }
   | expr_simple
   }
 
 expr_simple
-  { Pos { keyword<"__curPos"> }
-  | Var { Identifier }
-  | Primop { primop }
-  | Int { integer }
+  { Int { integer }
   | Float { float }
-  | TRUE
-  | FALSE
-  | NULL
-  | String { string_parts }
-  | IndentedString { ind_string_parts }
-
-  // TODO where should we handle paths? parse or eval?
-  // note: here we need !prec_path
-  | !prec_path expr_path
-
-  | String { URI } // note: if noURLLiterals: ParseError, URL literals are disabled
-  | Parens { '(' expr ')' }
-  | RecSet { _REC '{' ~markCurlyOpen bindings '}' }
-  | Set { '{'~markCurlyOpen bindings '}' } // TODO not needed ~curlyOpen marker? // Set { "{" ~curlyOpen (attr)* "}" }
-  | List { '[' (expr_select (!prec_list expr_select)*)? ']' }
   }
 
 @precedence {
-  prec_select @left,
-  prec_list @left,
-  prec_path @right, // path over call
-  prec_apply @left,
   prec_neg @left,
   prec_callSub @left,
-  prec_hasAttr @left,
-  prec_concat @right,
   prec_mul_div @left,
-  prec_plus @left,
-  prec_not @left,
-  prec_update @right,
-  prec_compare @left,
-  prec_equal @left,
-  prec_and @left,
-  prec_or @left,
-  prec_impl @right,
-
-  // FIXME?
-  //prec_pathRelative @right,
-  //prec_pathRaw @right,
-  prec_selectOrAttrPathDot
+  prec_plus @left
 }
 
 @skip {
-  whitespace |
-  Comment |
-  CommentBlock
+  whitespace
 }
-
-
-
-// strings
-
-StringInterpolation
-  { stringInterpolationStart expr stringInterpolationEnd
-  }
-
-IndentedStringInterpolation
-  { indentedStringInterpolationStart expr indentedStringInterpolationEnd
-  }
-
-@external tokens string from "./tokens" {
-  StringContent,
-  stringInterpolationStart,
-  stringEnd
-}
-
-@external tokens indentedString from "./tokens" { // aka: indented string
-  IndentedStringContent,
-  indentedStringInterpolationStart,
-  indentedStringEnd
-}
-
-@skip {} {
-
-  string_parts
-    { concatStrings { string_parts_interpolated }
-    }
-
-  ind_string_parts
-    { indentedStringStart (IndentedStringContent | IndentedStringInterpolation)* indentedStringEnd
-    }
-
-  string_parts_interpolated
-    { stringStart (StringContent | StringInterpolation)* stringEnd
-    }
-}
-
-expr_path
-  { PathLibrary
-  | PathAbsolute
-  | PathHome
-  | PathRelative
-  }
-
-
-
-// attribute sets
-
-// note: Attr value is positional -> last child node
-// {a=1;} -> Nix(Set(Attr(Identifier,Int)))
-
-bindings
-  { _Attrs
-    {
-      ( Attr { attrpath '=' expr ';' }
-      | AttrInherit { _INHERIT attrs ';' }
-      | AttrInheritFrom { _INHERIT '(' expr ')' attrs ';' } // !!! Should ensure sharing of the expression in $4.
-      )*
-    }
-  }
-
-// FIXME token name AttrPath
-// should be _AttrList?
-attrs
-  //{ AttrPath { ( _AttrName_String { string_attr } )* }
-  { _AttrPath { ( _AttrName_String { attrpath } )* }
-  }
-
-// a.b."c".${d}
-//  |^^^^^^^^^^ attrpath
-//  ^ select
-
-attrpath
-  { _AttrName { ((attr | string_attr) ('.' (attr | string_attr))*) }
-  }
-
-attr
-  { Identifier }
-
-string_attr
-  { String { string_parts }
-  | AttrInterpolation { '${' expr '}' }
-  }
-
-formals
-  { Formals { (formal? (',' formal)* (',' FormalsRest)?) | FormalsRest }
-  }
-
-FormalsRest
-  { '...'
-  }
-
-formal
-  { Formal { Identifier }
-  | Formal { Identifier '?' expr }
-  }
-
-
-
-// keywords
-
-// underscore or lowercase prefix -> anonymous token
-
-keyword<term> { @specialize<Identifier, term> }
-
-TRUE { keyword<"true"> }
-FALSE { keyword<"false"> }
-NULL { keyword<"null"> }
-
-_ASSERT { keyword<"assert"> }
-_IF { keyword<"if"> }
-_THEN { keyword<"then"> }
-_ELSE { keyword<"else"> }
-
-_WITH { keyword<"with"> }
-_LET { keyword<"let"> }
-_IN { keyword<"in"> }
-_OR_KW { keyword<"or"> }
-_INHERIT { keyword<"inherit"> }
-_REC { keyword<"rec"> }
 
 
 
@@ -248,152 +40,9 @@ _REC { keyword<"rec"> }
   float   { ((std.digit+ "." std.digit+) | ("." std.digit+)) (("e" | "E") std.digit+)? }
   @precedence { float, integer, "." }
 
-  Identifier { identifierChar (identifierChar | std.digit | "-" | "'" )* } // note: nix allows minus in identifiers
-  @precedence { Identifier, whitespace }
-
-  // TODO test unicode identifiers
-  identifierChar { std.asciiLetter | $[_\u{a1}-\u{10ffff}] }
-
-  indentedStringStart { "''" }
-  indentedStringInterpolationEnd { "}" }
-
-  stringStart { '"' }
-  stringInterpolationEnd { "}" }
-
   whitespace { std.whitespace+ }
-
-  CommentOpen { "#" }
-  Comment { CommentOpen ![\n]* }
-
-  // TODO? CommentBlockClose "*/" -> external scanner
-  CommentBlockOpen { "/*" }
-  CommentBlock { CommentBlockOpen blockCommentRest }
-  blockCommentRest { ![*] blockCommentRest | "*" blockCommentAfterStar }
-  blockCommentAfterStar { "/" | "*" blockCommentAfterStar | ![/*] blockCommentRest }
-
-  PathAbsolute { "/" pathContent }
-  @precedence { PathAbsolute, "/" }
-
-  PathHome { "~/" pathContent }
-
-  // aka "SPATH" in nix/src/libexpr/parser.y
-  // evaluated as __findFile __nixPath PathLibraryValue
-  PathLibrary { "<" PathLibraryValue ">" }
-  PathLibraryValue { pathContent }
-
-  PathRelative { pathRelative | pathRaw }
-
-  pathRelative { ("./" | "../") pathContent }
-  @precedence { PathRelative, "." }
-
-  // pathRaw matches almost anything with a "/"
-  // in "nix repl", these are interpreted as relative paths
-  pathRaw { pathComponent "/" pathContent }
-  // TODO why does PathRelative overlap with whitespace?
-  //@precedence { PathRelative, whitespace }
-  @precedence { whitespace, PathRelative }
-  @precedence { PathRelative, "." }
-  @precedence { Identifier, PathRelative } // TODO reverse?
-  //@precedence { PathRelative, Identifier }
-  @precedence { PathRelative, integer }
-  @precedence { PathRelative, float }
-  @precedence { PathRelative, "-" }
-  @precedence { PathRelative, "+" }
-  @precedence { PathRelative, "++" }
-
-  // note: no unicode in paths
-  pathContent { pathComponent ("/" pathComponent)* }
-  pathComponent { (std.asciiLetter | std.digit | "+" | "-" | "_" | ".")+ }
-
-  URI { uriSchema ":" uriPath }
-  uriSchema { std.asciiLetter (std.asciiLetter | std.digit | "+" | "-")* }
-  uriPath { (std.asciiLetter | std.digit | "%" | "/" | "?" | ":" | "@" | "&" | "=" | "+" | "$" | "," | "-" | "_" | "." | "!" | "~" | "*" | "'")+ }
-  @precedence { URI, Identifier }
 }
 
 
 
-// cat nix/src/libexpr/primops.cc | grep '.name = "__' | cut -d'"' -f2 | sed -E 's/^(.*)$/  | keyword<"\1">/'
-
-primop
-  { keyword<"__typeOf">
-  | keyword<"__isFunction">
-  | keyword<"__isInt">
-  | keyword<"__isFloat">
-  | keyword<"__isString">
-  | keyword<"__isBool">
-  | keyword<"__isPath">
-  | keyword<"__genericClosure">
-  | keyword<"__addErrorContext">
-  | keyword<"__ceil">
-  | keyword<"__floor">
-  | keyword<"__tryEval">
-  | keyword<"__getEnv">
-  | keyword<"__seq">
-  | keyword<"__deepSeq">
-  | keyword<"__trace">
-  | keyword<"__toPath">
-  | keyword<"__storePath">
-  | keyword<"__pathExists">
-  | keyword<"__readFile">
-  | keyword<"__findFile">
-  | keyword<"__hashFile">
-  | keyword<"__readDir">
-  | keyword<"__toXML">
-  | keyword<"__toJSON">
-  | keyword<"__fromJSON">
-  | keyword<"__toFile">
-  | keyword<"__filterSource">
-  | keyword<"__path">
-  | keyword<"__attrNames">
-  | keyword<"__attrValues">
-  | keyword<"__getAttr">
-  | keyword<"__unsafeGetAttrPos">
-  | keyword<"__hasAttr">
-  | keyword<"__isAttrs">
-  | keyword<"__listToAttrs">
-  | keyword<"__intersectAttrs">
-  | keyword<"__catAttrs">
-  | keyword<"__functionArgs">
-  | keyword<"__mapAttrs">
-  | keyword<"__zipAttrsWith">
-  | keyword<"__isList">
-  | keyword<"__elemAt">
-  | keyword<"__head">
-  | keyword<"__tail">
-  | keyword<"__filter">
-  | keyword<"__elem">
-  | keyword<"__concatLists">
-  | keyword<"__length">
-  | keyword<"__foldl'">
-  | keyword<"__any">
-  | keyword<"__all">
-  | keyword<"__genList">
-  | keyword<"__sort">
-  | keyword<"__partition">
-  | keyword<"__groupBy">
-  | keyword<"__concatMap">
-  | keyword<"__add">
-  | keyword<"__sub">
-  | keyword<"__mul">
-  | keyword<"__div">
-  | keyword<"__bitAnd">
-  | keyword<"__bitOr">
-  | keyword<"__bitXor">
-  | keyword<"__lessThan">
-  | keyword<"__substring">
-  | keyword<"__stringLength">
-  | keyword<"__hashString">
-  | keyword<"__match">
-  | keyword<"__split">
-  | keyword<"__concatStringsSep">
-  | keyword<"__replaceStrings">
-  | keyword<"__parseDrvName">
-  | keyword<"__compareVersions">
-  | keyword<"__splitVersion">
-  | keyword<"__traceVerbose">
-  }
-
-
-
-@external propSource nixHighlighting from "./highlight"
+// @external propSource nixHighlighting from "./highlight"
