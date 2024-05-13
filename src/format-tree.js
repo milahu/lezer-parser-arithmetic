@@ -1,5 +1,3 @@
-// called from nix-eval-js/demo/src/treeview.jsx
-
 /** @param {Tree | TreeNode} tree */
 
 export function stringifyTree(tree, options) {
