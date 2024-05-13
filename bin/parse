@@ -2,4 +2,4 @@
 
 cd "$(dirname "$0")/.."
 
-exec node src/nix-parse-cli.js "$@"
+exec node src/parse-cli.js "$@"
