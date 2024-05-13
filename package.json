@@ -32,6 +32,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/milahu/lezer-parser-nix.git"
+    "url": "https://github.com/milahu/lezer-parser-arithmetic"
   }
 }
