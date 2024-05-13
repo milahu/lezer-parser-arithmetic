@@ -45,4 +45,4 @@ expr_simple
 
 
 
-// @external propSource nixHighlighting from "./highlight"
+@external propSource arithmeticHighlighting from "./highlight"
